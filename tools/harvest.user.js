@@ -189,28 +189,40 @@ fragment D on SearchRentalListing { __typename id areaName bedroomCount building
     return { total: total || 0, got, capped: reachedCap && got < (total || 0) };
   }
 
-  async function harvest(buckets, logFn, onProgress) {
+  async function harvest(buckets, areaCodes, logFn, onProgress) {
     window.__seStop = false;
     const byId = new Map();
-    for (const bucket of buckets) {
-      logFn(`\n[bucket ${bucket}]`);
-      const queue = BOROUGHS.map((b) => ({ area: b.code, bucket, pmin: null, pmax: null }));
-      while (queue.length) {
-        const shard = queue.shift();
-        const sink = (r) => {
-          const prev = byId.get(r.id);
-          if (!prev || (r.has_floor_plan && !prev.has_floor_plan)) byId.set(r.id, r);
-        };
-        const { total, got, capped } = await enumerateShard(shard, sink, logFn);
-        const fp = [...byId.values()].filter((r) => r.has_floor_plan).length;
-        logFn(`  ${describe(shard)}: total≈${total}, collected ${got}${capped ? " (capped → subdividing)" : ""} | unique ${byId.size}, w/ floor plan ${fp}`);
-        onProgress(byId.size, fp);
-        if (capped) {
-          const subs = subdivide(shard);
-          if (subs) queue.push(...subs);
-          else logFn(`  ! ${describe(shard)} still capped at finest grain — some unreached`);
+    try {
+      for (const bucket of buckets) {
+        logFn(`\n[bucket ${bucket}]`);
+        const seeds = (areaCodes && areaCodes.length)
+          ? areaCodes.map((c) => ({ area: c, bucket, pmin: null, pmax: null }))
+          : BOROUGHS.map((b) => ({ area: b.code, bucket, pmin: null, pmax: null }));
+        const queue = seeds.slice();
+        while (queue.length) {
+          const shard = queue.shift();
+          const sink = (r) => {
+            const prev = byId.get(r.id);
+            if (!prev || (r.has_floor_plan && !prev.has_floor_plan)) byId.set(r.id, r);
+          };
+          const { total, got, capped } = await enumerateShard(shard, sink, logFn);
+          const fp = [...byId.values()].filter((r) => r.has_floor_plan).length;
+          logFn(`  ${describe(shard)}: total≈${total}, collected ${got}${capped ? " (capped → subdividing)" : ""} | unique ${byId.size}, w/ floor plan ${fp}`);
+          onProgress(byId.size, fp);
+          if (capped) {
+            const subs = subdivide(shard);
+            if (subs) queue.push(...subs);
+            else logFn(`  ! ${describe(shard)} still capped at finest grain — some unreached`);
+          }
+          await sleep(jitter(DELAY_MIN, DELAY_MAX));
         }
-        await sleep(jitter(DELAY_MIN, DELAY_MAX));
+      }
+    } catch (e) {
+      // Always keep what we collected so a Stop / block still yields a file.
+      if (e.message === "stopped by user") logFn("\n[stopped — saving partial results]");
+      else {
+        logFn(`\n[error: ${e.message} — saving partial results]`);
+        if (e.blocked) logFn("PerimeterX blocked you. Reload, browse a listing as a human, then retry.");
       }
     }
     return [...byId.values()];
@@ -238,6 +250,9 @@ fragment D on SearchRentalListing { __typename id areaName bedroomCount building
           ${BUCKETS.map((b) => `<option value="${b.name}" selected>${b.label}</option>`).join("")}
         </select>
       </label>
+      <label style="display:block;margin-bottom:6px">Area codes (blank = all 5 boroughs; e.g. 313 = Bushwick, good for a quick test):
+        <input id="se-area" placeholder="blank = all NYC" style="width:100%;margin-top:3px;box-sizing:border-box"/>
+      </label>
       <button id="se-start" style="background:#1f6feb;color:#fff;border:0;padding:6px 10px;border-radius:5px;cursor:pointer">▶ Harvest floor plans</button>
       <button id="se-stop" style="background:#8b2c2c;color:#fff;border:0;padding:6px 10px;border-radius:5px;cursor:pointer;margin-left:6px">■ Stop</button>
       <div id="se-stat" style="margin-top:6px">idle</div>
@@ -252,24 +267,23 @@ fragment D on SearchRentalListing { __typename id areaName bedroomCount building
     box.querySelector("#se-start").onclick = async () => {
       const buckets = [...box.querySelectorAll("#se-buckets option:checked")].map((o) => o.value);
       if (!buckets.length) { log("pick at least one bucket"); return; }
+      const areaRaw = box.querySelector("#se-area").value.trim();
+      const areaCodes = areaRaw ? areaRaw.split(",").map((s) => parseInt(s.trim(), 10)).filter(Boolean) : null;
       logEl.textContent = "";
-      log(`starting: ${buckets.join(", ")}`);
-      try {
-        const listings = await harvest(buckets, log, progress);
-        const withFp = listings.filter((r) => r.has_floor_plan).length;
-        const payload = { generated_at: new Date().toISOString(), buckets, total: listings.length, with_floorplan: withFp, listings };
-        downloadJSON(payload, "harvest.json");
-        log(`\nDONE: ${listings.length} listings, ${withFp} with floor plans → harvest.json downloaded`);
-        log(`next: streeteasy-floorplans ingest harvest.json --download`);
-      } catch (e) {
-        log(`\nERROR: ${e.message}`);
-        if (e.blocked) log("PerimeterX blocked you. Reload the page, browse a listing as a human, then retry.");
-      }
+      log(`starting: ${buckets.join(", ")}${areaCodes ? " | area " + areaCodes.join(",") : " | all NYC"}`);
+      const listings = await harvest(buckets, areaCodes, log, progress);  // never throws — returns partial
+      if (!listings.length) { log("\nno listings collected (blocked on the first request?)"); return; }
+      const withFp = listings.filter((r) => r.has_floor_plan).length;
+      const payload = { generated_at: new Date().toISOString(), buckets, total: listings.length, with_floorplan: withFp, listings };
+      downloadJSON(payload, "harvest.json");
+      log(`\nDONE: ${listings.length} listings, ${withFp} with floor plans → harvest.json downloaded`);
+      log(`next: streeteasy-floorplans ingest harvest.json --download`);
     };
   }
 
   // expose for console use + auto-build UI
-  window.seHarvest = (buckets) => harvest(buckets || BUCKETS.map((b) => b.name), console.log, () => {});
+  window.seHarvest = (buckets, areaCodes) =>
+    harvest(buckets || BUCKETS.map((b) => b.name), areaCodes || null, console.log, () => {});
   ui();
   console.log("[harvest] ready — click ▶ Harvest floor plans (bottom-right), or run seHarvest()");
 })();
