@@ -70,6 +70,41 @@ pointed at a real residential proxy. No proxy → expect 403s.
 
 ---
 
+## 🆓 Free path (no proxy): harvest from your own browser
+
+You don't need a paid proxy. Split the work by who PerimeterX trusts:
+
+* the floor-plan **images** live on Zillow's CDN, which is **wide open** (no
+  proxy, no auth — plain download);
+* the only thing behind PerimeterX is fetching the floor-plan **keys**, and the
+  one client PerimeterX trusts for free is **your own real Chrome** — when you
+  browse StreetEasy normally, you're not blocked.
+
+So: harvest the keys with a tiny script in your real browser, then let this tool
+bulk-download the images.
+
+1. Open <https://streeteasy.com/> in your normal Chrome.
+2. Run **`tools/harvest.user.js`** — either install it in Tampermonkey, or open
+   DevTools → Console, paste the file, press Enter. A **“▶ Harvest floor plans”**
+   panel appears bottom-right. Pick buckets, click it. It paginates the GraphQL
+   search (sharding across boroughs/neighborhoods to beat the 100-page cap),
+   collects every listing's `leadMedia.floorPlan.key`, and downloads
+   **`harvest.json`**. If a “Press & Hold” page ever appears, solve it like a
+   human and click again.
+3. Feed it to the tool — this part needs **no proxy** (open CDN):
+
+   ```bash
+   streeteasy-floorplans ingest harvest.json --download
+   ```
+
+   → fills `dataset/<bucket>/` with real floor-plan images, deduped + indexed.
+
+Verified end-to-end here: `ingest --download` pulls real `.webp` floor plans
+from the CDN, buckets them, and de-dupes identical plans by content hash. The
+only manual step is running the harvester in your browser.
+
+---
+
 ## Install
 
 Requires Python ≥ 3.10.
@@ -108,6 +143,9 @@ streeteasy-floorplans run --buckets studio,1br,2br,3br,4plus --details all
 
 # Enumerate only (write index.jsonl, no image download):
 streeteasy-floorplans enumerate --buckets 1br --areas manhattan
+
+# Free path: ingest a browser-harvested harvest.json, then download images (no proxy):
+streeteasy-floorplans ingest harvest.json --download
 
 # Download floor-plan images from an existing index:
 streeteasy-floorplans download
@@ -179,8 +217,10 @@ streeteasy_floorplans/
   graphql.py     # query builders + response parsers + GraphQLClient
   srp_html.py    # fallback HTML/RSC (Flight) parser for search pages
   images.py      # key → CDN URL, download, content-hash dedupe
-  pipeline.py    # adaptive sharding, enumerate, enrich, index, download, summarize
+  pipeline.py    # adaptive sharding, enumerate, enrich, ingest, index, download, summarize
   cli.py         # command-line interface
+tools/
+  harvest.user.js  # browser-side floor-plan-key harvester (free, no-proxy path)
 tests/           # offline tests + a real captured SRP fixture
 ```
 

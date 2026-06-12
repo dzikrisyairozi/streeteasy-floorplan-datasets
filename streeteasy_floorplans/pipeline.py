@@ -169,6 +169,48 @@ def write_index(records: list[ListingRecord], out_dir: Path, log: Logger = print
     return stats
 
 
+_RECORD_FIELDS = {
+    "id", "bucket", "bedroom_count", "area_name", "url", "street", "unit", "price",
+    "living_area_size", "building_type", "is_new_development", "has_floor_plan",
+    "floor_plan_keys", "photo_keys", "source", "scraped_at",
+}
+
+
+def record_from_dict(d: dict[str, Any]) -> ListingRecord:
+    """Build a ListingRecord from a harvest.json / index.jsonl row (tolerant)."""
+    return ListingRecord(**{k: v for k, v in d.items() if k in _RECORD_FIELDS and k != "id"}, id=str(d["id"]))
+
+
+def ingest_harvest(path: Path, out_dir: Path, log: Logger = print) -> list[ListingRecord]:
+    """Load a browser-harvested JSON file into ListingRecords + write the index.
+
+    Accepts either ``{"listings": [...]}`` (the userscript output) or a bare list.
+    The harvest comes from your real browser, so no proxy is involved here.
+    """
+    import json
+
+    raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    rows = raw.get("listings") if isinstance(raw, dict) else raw
+    if not isinstance(rows, list):
+        raise ValueError(f"{path}: expected a list of listings or {{'listings': [...]}}")
+
+    by_id: dict[str, ListingRecord] = {}
+    for d in rows:
+        try:
+            r = record_from_dict(d)
+        except (KeyError, TypeError) as exc:
+            log(f"  ! skipping malformed row: {exc}")
+            continue
+        prev = by_id.get(r.id)
+        if prev is None or (r.has_floor_plan and not prev.has_floor_plan):
+            by_id[r.id] = r
+
+    records = list(by_id.values())
+    log(f"[ingest] loaded {len(records)} unique listings from {path}")
+    write_index(records, out_dir, log=log)
+    return records
+
+
 def summarize(records: list[ListingRecord]) -> dict[str, Any]:
     per_bucket: dict[str, dict[str, int]] = {}
     for r in records:

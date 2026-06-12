@@ -109,27 +109,33 @@ def cmd_enumerate(args: argparse.Namespace) -> int:
 def cmd_download(args: argparse.Namespace) -> int:
     from . import pipeline
     from .http_client import HttpClient
-    from .models import ListingRecord
 
     s = _settings_from_args(args)
     index_path = s.out_dir / "index.jsonl"
     if not index_path.exists():
-        raise SystemExit(f"no index at {index_path}. run `enumerate` first.")
-    records = []
-    for line in index_path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        d = json.loads(line)
-        records.append(
-            ListingRecord(
-                id=d["id"], bucket=d["bucket"], bedroom_count=d.get("bedroom_count"),
-                has_floor_plan=d.get("has_floor_plan", False),
-                floor_plan_keys=d.get("floor_plan_keys", []),
-            )
-        )
+        raise SystemExit(f"no index at {index_path}. run `enumerate` or `ingest` first.")
+    records = [
+        pipeline.record_from_dict(json.loads(line))
+        for line in index_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    # The image CDN isn't bot-walled, so downloading needs no proxy.
     client = HttpClient(s)
     result = pipeline.download_floorplans(client, records, s)
     print(json.dumps(result, indent=2))
+    return 0
+
+
+def cmd_ingest(args: argparse.Namespace) -> int:
+    from . import pipeline
+
+    s = _settings_from_args(args)
+    records = pipeline.ingest_harvest(Path(args.file), s.out_dir)
+    stats = pipeline.summarize(records)
+    if args.download:
+        from .http_client import HttpClient  # CDN download — no proxy needed
+        stats["download"] = pipeline.download_floorplans(HttpClient(s), records, s)
+    print(json.dumps(stats, indent=2))
     return 0
 
 
@@ -210,6 +216,12 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("download", help="download floor-plan images from index.jsonl")
     add_common(sp)
     sp.set_defaults(func=cmd_download)
+
+    sp = sub.add_parser("ingest", help="ingest a browser-harvested harvest.json into the dataset index")
+    add_common(sp)
+    sp.add_argument("file", help="harvest.json produced by tools/harvest.user.js")
+    sp.add_argument("--download", action="store_true", help="also download floor-plan images now (no proxy needed)")
+    sp.set_defaults(func=cmd_ingest)
 
     sp = sub.add_parser("details", help="fetch one listing's floor-plan info")
     add_common(sp)
