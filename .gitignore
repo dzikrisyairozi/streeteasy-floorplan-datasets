@@ -1,0 +1,26 @@
+# Dataset output (large; regenerate with the pipeline)
+/dataset/
+/out/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.env
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Tooling scratch
+.playwright-mcp/
+.serena/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
