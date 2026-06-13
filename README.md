@@ -6,7 +6,36 @@ recorded automatically — no manual sorting.
 
 Feasibility research and the approach decision are written up in
 [issue #2](https://github.com/dzikrisyairozi/streeteasy-floorplan-datasets/issues/2).
-This repo is the implementation of that plan.
+This repo is the implementation of that plan — and ships the resulting dataset.
+
+---
+
+## The dataset
+
+`dataset/` contains **5,843 floor-plan images** across **13,068** NYC rental
+listings, categorized by bedroom count, harvested **June 2026** via the free
+browser path (below — no proxy, no paid service).
+
+| Bucket | Listings | With floor plan | Rate | Images on disk |
+|---|---:|---:|---:|---:|
+| Studio | 2,216 | 1,311 | 59% | 1,210 |
+| 1BR | 4,961 | 2,677 | 54% | 2,439 |
+| 2BR | 3,823 | 1,590 | 42% | 1,529 |
+| 3BR | 1,563 | 495 | 32% | 482 |
+| 4+ | 505 | 185 | 37% | 183 |
+| **Total** | **13,068** | **6,258** | **48%** | **5,843** |
+
+- **Images on disk (5,843) < listings with a floor plan (6,258)** because identical
+  plans (the same unit line reused across a building) are de-duplicated by content
+  hash — 415 byte-identical copies collapsed, **0 duplicate files** remain.
+- Floor-plan availability **declines as bedrooms rise** (studio 59% → 3BR 32%).
+- The **6,810** listings with no floor plan are kept in `_no_floorplan.jsonl`
+  (recorded, not dropped), so the dataset is auditable.
+- Per-image manifest + sha256 in `floorplans.jsonl`; full index in `index.jsonl`;
+  summary in `stats.json`. Layout details under [Output layout](#output-layout).
+
+> ⚠️ The images are third-party copyrighted material, **not** covered by this
+> repo's code license — see [License & legal](#license--legal).
 
 ---
 
@@ -198,11 +227,11 @@ against a **real captured StreetEasy search page**
 builder and response parsers, image URL/dedupe logic, proxy session rotation,
 and sharding logic are covered too.
 
-**Verification status:** unit tests (20/20) and the offline CLI are green. The
-live happy path (a successful api-v6 fetch) requires a real US residential proxy
-pool and was **not** exercised here — without one, every cold request is
-PerimeterX-403'd, which the client correctly detects and surfaces as
-`BlockedError`. Point `SE_PROXY_URL` at a residential gateway to run it for real.
+**Verification status:** 24 unit tests pass and the offline CLI is green. The
+dataset above was built **for real** via the free browser-harvest path (see
+`dataset/stats.json`). The headless proxy path (direct api-v6 from this tool)
+requires a US residential proxy pool; without one, cold requests are
+PerimeterX-403'd, which the client detects and surfaces as `BlockedError`.
 
 ---
 
@@ -227,16 +256,20 @@ tests/           # offline tests + a real captured SRP fixture
 
 ---
 
-## Legal / ToS
+## License & legal
 
-Scraping StreetEasy is **against its Terms of Service**, and floor-plan images
-are likely **copyrighted** by the listing brokers / StreetEasy. PerimeterX
-exists specifically to prevent this. This project documents technical
-feasibility and is intended for personal research; redistributing scraped
-copyrighted floor plans carries materially more risk than private analysis.
-Decide your use and risk before running at scale. Not affiliated with StreetEasy
+**Code — MIT** (see [`LICENSE`](LICENSE)). The GraphQL query shapes and area codes
+are derived from the MIT-licensed
+[`evandcoleman/streeteasy-api`](https://github.com/evandcoleman/streeteasy-api) and
+[`eneakllomollari/streeteasy-cli`](https://github.com/eneakllomollari/streeteasy-cli).
+
+**Dataset (`dataset/`) — NOT MIT.** The floor-plan images are **not** the
+project's to license: they are third-party material, copyright of the original
+listing brokers / StreetEasy (Zillow Group), included here for research and
+reference only. **No license to reuse or redistribute the images is granted.**
+
+Scraping StreetEasy is also **against its Terms of Service**, and PerimeterX
+exists specifically to prevent it. This project documents technical feasibility
+and is intended for personal research; publishing or redistributing the images
+carries real legal risk that is yours to assess. Not affiliated with StreetEasy
 or Zillow Group.
-
-Code is MIT-licensed; the GraphQL query shapes and area codes are derived from
-the MIT-licensed [`evandcoleman/streeteasy-api`](https://github.com/evandcoleman/streeteasy-api)
-and [`eneakllomollari/streeteasy-cli`](https://github.com/eneakllomollari/streeteasy-cli).
