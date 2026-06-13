@@ -1,0 +1,27 @@
+{
+  "total_listings": 13068,
+  "with_floorplan": 6258,
+  "floorplan_rate": 0.4789,
+  "per_bucket": {
+    "2br": {
+      "total": 3823,
+      "with_floorplan": 1590
+    },
+    "studio": {
+      "total": 2216,
+      "with_floorplan": 1311
+    },
+    "1br": {
+      "total": 4961,
+      "with_floorplan": 2677
+    },
+    "3br": {
+      "total": 1563,
+      "with_floorplan": 495
+    },
+    "4plus": {
+      "total": 505,
+      "with_floorplan": 185
+    }
+  }
+}
