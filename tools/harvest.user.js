@@ -181,6 +181,7 @@ fragment D on SearchRentalListing { __typename id areaName bedroomCount building
       if (recs.length === 0) break;
       recs.forEach(sink);
       got += recs.length;
+      logFn(`  ${describe(shard)} p${page}: +${recs.length} → ${got}${total ? "/" + total : ""}`);
       if (got >= total) break;
       if (page === PAGE_CAP) { reachedCap = true; break; }
       page++;

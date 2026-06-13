@@ -181,11 +181,17 @@ def record_from_dict(d: dict[str, Any]) -> ListingRecord:
     return ListingRecord(**{k: v for k, v in d.items() if k in _RECORD_FIELDS and k != "id"}, id=str(d["id"]))
 
 
-def ingest_harvest(path: Path, out_dir: Path, log: Logger = print) -> list[ListingRecord]:
+def ingest_harvest(
+    path: Path, out_dir: Path, log: Logger = print, *, merge: bool = False
+) -> list[ListingRecord]:
     """Load a browser-harvested JSON file into ListingRecords + write the index.
 
     Accepts either ``{"listings": [...]}`` (the userscript output) or a bare list.
     The harvest comes from your real browser, so no proxy is involved here.
+
+    With ``merge=True``, listings already in ``out_dir/index.jsonl`` are loaded
+    first and combined (deduped by id) — so harvesting buckets incrementally adds
+    to the dataset instead of replacing it.
     """
     import json
 
@@ -195,6 +201,19 @@ def ingest_harvest(path: Path, out_dir: Path, log: Logger = print) -> list[Listi
         raise ValueError(f"{path}: expected a list of listings or {{'listings': [...]}}")
 
     by_id: dict[str, ListingRecord] = {}
+    if merge:
+        existing = Path(out_dir) / "index.jsonl"
+        if existing.exists():
+            for line in existing.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    r = record_from_dict(json.loads(line))
+                except (KeyError, TypeError, json.JSONDecodeError):
+                    continue
+                by_id[r.id] = r
+            log(f"[ingest] merging with {len(by_id)} existing records in {existing}")
+
     for d in rows:
         try:
             r = record_from_dict(d)

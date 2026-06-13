@@ -43,6 +43,22 @@ def test_ingest_writes_index_and_dedupes(tmp_path: Path) -> None:
     assert stats["with_floorplan"] == 2
 
 
+def test_ingest_merge_adds_to_existing(tmp_path: Path) -> None:
+    out = tmp_path / "ds"
+    p1 = tmp_path / "h1.json"
+    p1.write_text(json.dumps({"listings": [
+        {"id": "1", "bucket": "studio", "has_floor_plan": True, "floor_plan_keys": ["a"]}]}), encoding="utf-8")
+    pipeline.ingest_harvest(p1, out, log=lambda *_: None)
+
+    p2 = tmp_path / "h2.json"
+    p2.write_text(json.dumps({"listings": [
+        {"id": "2", "bucket": "1br", "has_floor_plan": False}]}), encoding="utf-8")
+    recs = pipeline.ingest_harvest(p2, out, log=lambda *_: None, merge=True)
+
+    assert sorted(r.id for r in recs) == ["1", "2"]              # studio kept + 1br added
+    assert len((out / "index.jsonl").read_text(encoding="utf-8").splitlines()) == 2
+
+
 def test_ingest_accepts_bare_list(tmp_path: Path) -> None:
     p = tmp_path / "bare.json"
     p.write_text(json.dumps([{"id": "9", "bucket": "studio", "has_floor_plan": False}]), encoding="utf-8")

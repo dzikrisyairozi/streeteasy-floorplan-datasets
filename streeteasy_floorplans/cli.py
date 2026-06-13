@@ -130,7 +130,7 @@ def cmd_ingest(args: argparse.Namespace) -> int:
     from . import pipeline
 
     s = _settings_from_args(args)
-    records = pipeline.ingest_harvest(Path(args.file), s.out_dir)
+    records = pipeline.ingest_harvest(Path(args.file), s.out_dir, merge=args.merge)
     stats = pipeline.summarize(records)
     if args.download:
         from .http_client import HttpClient  # CDN download — no proxy needed
@@ -221,6 +221,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_common(sp)
     sp.add_argument("file", help="harvest.json produced by tools/harvest.user.js")
     sp.add_argument("--download", action="store_true", help="also download floor-plan images now (no proxy needed)")
+    sp.add_argument("--merge", action="store_true", help="merge into an existing index.jsonl instead of replacing it")
     sp.set_defaults(func=cmd_ingest)
 
     sp = sub.add_parser("details", help="fetch one listing's floor-plan info")

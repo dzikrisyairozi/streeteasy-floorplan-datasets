@@ -43,3 +43,21 @@ def test_download_and_dedupe(tmp_path: Path) -> None:
     # only one file on disk
     files = list((tmp_path / "studio").glob("*"))
     assert len(files) == 1
+
+
+def test_download_skips_existing(tmp_path: Path) -> None:
+    calls = []
+
+    def fetch(url: str) -> bytes:
+        calls.append(url)
+        return b"NEW"
+
+    (tmp_path / "studio").mkdir()
+    (tmp_path / "studio" / "111.webp").write_bytes(b"already-here")
+    a = FloorPlanAsset("111", "studio", "k1", images.cdn_url("k1"))
+
+    images.download_asset(a, fetch, tmp_path)  # skip_existing defaults True
+
+    assert calls == []                          # never fetched
+    assert a.local_path.endswith("111.webp")
+    assert a.bytes == len(b"already-here")

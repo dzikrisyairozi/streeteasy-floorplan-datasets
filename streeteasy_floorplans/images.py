@@ -60,13 +60,26 @@ def download_asset(
     seen_hashes: Optional[dict[str, str]] = None,
     index: int = 0,
     ext: Optional[str] = None,
+    skip_existing: bool = True,
 ) -> FloorPlanAsset:
     """Download one floor-plan image into ``out_dir/<bucket>/`` and dedupe by content.
 
     ``seen_hashes`` maps sha256 -> first listing_id that produced it; identical
     images (the same plan reused across units in a building) are recorded as
-    duplicates and not written twice.
+    duplicates and not written twice. When ``skip_existing`` and the target file
+    already exists (e.g. an incremental run that adds new buckets), it is left
+    untouched and not re-fetched.
     """
+    bucket_dir = out_dir / asset.bucket
+    suffix = ext or constants.DEFAULT_IMAGE_EXT
+    name = f"{asset.listing_id}__{index}.{suffix}" if index else f"{asset.listing_id}.{suffix}"
+    path = bucket_dir / name
+
+    if skip_existing and path.exists() and path.stat().st_size > 0:
+        asset.local_path = str(path)
+        asset.bytes = path.stat().st_size
+        return asset
+
     data = fetch(asset.url)
     digest = sha256_bytes(data)
     asset.sha256 = digest
@@ -76,11 +89,7 @@ def download_asset(
         asset.duplicate_of = seen_hashes[digest]
         return asset
 
-    bucket_dir = out_dir / asset.bucket
     bucket_dir.mkdir(parents=True, exist_ok=True)
-    suffix = ext or constants.DEFAULT_IMAGE_EXT
-    name = f"{asset.listing_id}__{index}.{suffix}" if index else f"{asset.listing_id}.{suffix}"
-    path = bucket_dir / name
     path.write_bytes(data)
     asset.local_path = str(path)
     if seen_hashes is not None:
