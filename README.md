@@ -35,11 +35,12 @@ enumerate (GraphQL searchRentals, sharded)
    → download floor-plan images into dataset/<bucket>/, de-duped by content hash
 ```
 
-### Beating the 100-page cap with adaptive sharding
+### Beating the ~1,000-result cap with adaptive sharding
 
-StreetEasy caps any single search at ~100 pages, so a popular bucket (e.g.
-NYC-wide 1BR) can't be fully reached from one query. The enumerator shards
-**per borough**, and when a shard is still capped it subdivides
+StreetEasy only serves **~the first ~1,000 results per search** (it returns empty
+pages beyond that), so a popular bucket can't be fully reached from one query —
+Manhattan alone has 2,400+ 1-bedrooms. The enumerator shards **per borough**, and
+when a shard comes back materially short of its `totalCount` it subdivides
 **borough → neighborhood → price band**, de-duplicating listings by id across
 shards (overlapping shards are harmless). Area codes for all five boroughs and
 ~250 neighborhoods are baked in (`streeteasy_floorplans/constants.py`).

@@ -171,23 +171,25 @@ fragment D on SearchRentalListing { __typename id areaName bedroomCount building
 
   async function enumerateShard(shard, sink, logFn) {
     const token = uuid();
-    let page = 1, total = null, got = 0, reachedCap = false;
+    let page = 1, total = null, got = 0;
     while (page <= PAGE_CAP) {
       if (window.__seStop) throw new Error("stopped by user");
       const data = await gqlRetry(buildSearchQuery([shard.area], shard.bucket, page, token, shard.pmin, shard.pmax), logFn);
       const sr = data.searchRentals || {};
       if (total == null) total = sr.totalCount || 0;
       const recs = parseEdges(sr, shard.bucket);
-      if (recs.length === 0) break;
+      if (recs.length === 0) break;          // API ran out of results for this search
       recs.forEach(sink);
       got += recs.length;
       logFn(`  ${describe(shard)} p${page}: +${recs.length} → ${got}${total ? "/" + total : ""}`);
       if (got >= total) break;
-      if (page === PAGE_CAP) { reachedCap = true; break; }
       page++;
       await sleep(jitter(DELAY_MIN, DELAY_MAX));
     }
-    return { total: total || 0, got, capped: reachedCap && got < (total || 0) };
+    // StreetEasy serves only ~the first ~1000 results per search (empty pages
+    // beyond that), regardless of PAGE_CAP. So "capped" = we got materially fewer
+    // than totalCount, and must subdivide (borough → neighborhood → price band).
+    return { total: total || 0, got, capped: (total || 0) - got > 5 };
   }
 
   async function harvest(buckets, areaCodes, logFn, onProgress) {

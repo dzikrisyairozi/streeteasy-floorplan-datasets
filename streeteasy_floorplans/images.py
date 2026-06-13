@@ -76,8 +76,12 @@ def download_asset(
     path = bucket_dir / name
 
     if skip_existing and path.exists() and path.stat().st_size > 0:
+        data = path.read_bytes()
+        asset.sha256 = sha256_bytes(data)
+        asset.bytes = len(data)
         asset.local_path = str(path)
-        asset.bytes = path.stat().st_size
+        if seen_hashes is not None:  # keep cross-run dedup working
+            seen_hashes.setdefault(asset.sha256, asset.listing_id)
         return asset
 
     data = fetch(asset.url)

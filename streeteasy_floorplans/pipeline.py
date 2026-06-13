@@ -1,15 +1,16 @@
 """Orchestration: enumerate -> (optional detail enrich) -> index -> download.
 
-Key problem this solves: StreetEasy caps any single search at ~100 pages, so a
-popular bucket (e.g. NYC-wide 1BR) cannot be fully reached from one query. We
-shard adaptively — start per borough, and when a shard is still capped, subdivide
-it (borough -> neighborhoods -> price bands). Listings are de-duplicated by id
-across shards, so overlapping shards are harmless.
+Key problem this solves: StreetEasy only serves ~the first ~1000 results per
+search (it returns empty pages beyond that), so a popular bucket (e.g. NYC-wide
+1BR has 2,400+ in Manhattan alone) cannot be fully reached from one query. We
+shard adaptively — start per borough, and when a shard is still capped (we got
+materially fewer than totalCount), subdivide it (borough -> neighborhoods ->
+price bands). Listings are de-duplicated by id across shards, so overlapping
+shards are harmless.
 """
 
 from __future__ import annotations
 
-import math
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -42,24 +43,27 @@ def _token() -> str:
 def _enumerate_shard(
     gclient: GraphQLClient, settings: Settings, shard: Shard, log: Logger, scraped_at: str
 ) -> tuple[list[ListingRecord], int, bool]:
-    """Enumerate one shard. Returns (records, total_count, capped)."""
+    """Enumerate one shard. Returns (records, total_count, capped).
+
+    StreetEasy only serves ~the first ~1000 results per search (empty pages
+    beyond that), regardless of the page cap — so a shard is "capped" when we
+    collect materially fewer than ``totalCount`` and must be subdivided.
+    """
     token = _token()
-    first, total = gclient.search_page(shard, 1, user_search_token=token, scraped_at=scraped_at)
-    pages_needed = math.ceil(total / settings.per_page) if total else 1
-    capped = pages_needed > settings.page_cap
-
-    if capped:
-        log(f"  · {shard.describe()}: {total} listings > cap — subdividing")
-        return first, total, True
-
-    records = list(first)
-    for page in range(2, pages_needed + 1):
+    records, total = gclient.search_page(shard, 1, user_search_token=token, scraped_at=scraped_at)
+    records = list(records)
+    page = 2
+    while page <= settings.page_cap and len(records) < total:
         more, _ = gclient.search_page(shard, page, user_search_token=token, scraped_at=scraped_at)
-        if not more:
+        if not more:  # API ran out of results for this search
             break
         records.extend(more)
-    log(f"  · {shard.describe()}: {total} listings, {len(records)} collected")
-    return records, total, False
+        page += 1
+
+    capped = (total - len(records)) > 5
+    log(f"  · {shard.describe()}: {total} listings, {len(records)} collected"
+        f"{' (capped → subdividing)' if capped else ''}")
+    return records, total, capped
 
 
 def _subdivide(shard: Shard, log: Logger) -> Optional[list[Shard]]:
