@@ -1,5 +1,4 @@
-# Dataset output (large; regenerate with the pipeline)
-/dataset/
+# Build output
 /out/
 
 # Python
